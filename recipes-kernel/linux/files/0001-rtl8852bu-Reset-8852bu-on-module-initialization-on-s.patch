@@ -1,0 +1,112 @@
+From bd48bc6d1b93061188926c7bcd0fd9fd016e5506 Mon Sep 17 00:00:00 2001
+From: OpenEmbedded <oe.patch@oe>
+Date: Wed, 24 May 2023 09:54:15 +0200
+Subject: [PATCH] rtl8852bu: Reset 8852bu on module initialization on star64
+
+This adds a new "platform" for riscv_star64, in which we can perform
+necessary initialization of the 8852bu
+---
+ drivers/staging/rtl8852bu/Makefile            |  3 +-
+ .../platform/platform_riscv_star64.c          | 56 +++++++++++++++++++
+ .../rtl8852bu/platform/riscv_star64.mk        |  8 +++
+ 3 files changed, 66 insertions(+), 1 deletion(-)
+ create mode 100644 drivers/staging/rtl8852bu/platform/platform_riscv_star64.c
+ create mode 100644 drivers/staging/rtl8852bu/platform/riscv_star64.mk
+
+diff --git a/drivers/staging/rtl8852bu/Makefile b/drivers/staging/rtl8852bu/Makefile
+index 3a1742777cb3..26141a89a7db 100755
+--- a/drivers/staging/rtl8852bu/Makefile
++++ b/drivers/staging/rtl8852bu/Makefile
+@@ -148,7 +148,7 @@ CONFIG_LAYER2_ROAMING = y
+ CONFIG_ROAMING_FLAG = 0x3
+ 
+ ###################### Platform Related #######################
+-CONFIG_PLATFORM_I386_PC = y
++CONFIG_PLATFORM_I386_PC = n
+ CONFIG_PLATFORM_RTL8198D = n
+ CONFIG_PLATFORM_ANDROID_X86 = n
+ CONFIG_PLATFORM_ANDROID_INTEL_X86 = n
+@@ -158,6 +158,7 @@ CONFIG_PLATFORM_ARM_SUNxI = n
+ CONFIG_PLATFORM_RTK1319 = n
+ CONFIG_PLATFORM_RTK16XXB = n
+ CONFIG_PLATFORM_AML_S905 = n
++CONFIG_PLATFORM_RISCV_STAR64 = y
+ 
+ ########### CUSTOMER ################################
+ 
+diff --git a/drivers/staging/rtl8852bu/platform/platform_riscv_star64.c b/drivers/staging/rtl8852bu/platform/platform_riscv_star64.c
+new file mode 100644
+index 000000000000..32aeda3beada
+--- /dev/null
++++ b/drivers/staging/rtl8852bu/platform/platform_riscv_star64.c
+@@ -0,0 +1,56 @@
++/******************************************************************************
++ *
++ * This program is free software; you can redistribute it and/or modify it
++ * under the terms of version 2 of the GNU General Public License as
++ * published by the Free Software Foundation.
++ *
++ * This program is distributed in the hope that it will be useful, but WITHOUT
++ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
++ * FITNESS FOR A PARTICULAR PURPOSE. See the GNU General Public License for
++ * more details.
++ *
++ *****************************************************************************/
++
++#include <linux/gpio.h>
++
++#include <drv_types.h>
++#include <rtw_debug.h>
++
++/*
++ * Return:
++ *	0:	power on successfully
++ *	others:	power on failed
++ */
++int platform_wifi_power_on(void)
++{
++	/* TODO:
++	 *
++	 * Port this over to use the gpiod_ API instead. For this to work, I
++	 * think we need to add the 6265B-UUB to the device tree of the star64
++	 * so that we can associate GPIO47 ("GPIO_WIFI_RESET") with it.
++	 */
++
++	int ret;
++	ret = gpio_request(GPIO_WIFI_RESET , "wifi_rst");
++
++	if (ret) {
++		RTW_PRINT("Failed to request GPIO %d: %d\n", GPIO_WIFI_RESET, ret);
++		return ret;
++	}
++
++	ret = gpio_direction_output(GPIO_WIFI_RESET , 1);
++
++	if (ret) {
++		RTW_PRINT("Failed to set GPIO %d to OUTPUT: \n", GPIO_WIFI_RESET, ret);
++		gpio_free(GPIO_WIFI_RESET);
++		return ret;
++	}
++
++	return 0;
++}
++
++void platform_wifi_power_off(void)
++{
++	gpio_direction_output(GPIO_WIFI_RESET , 0);
++	gpio_free(GPIO_WIFI_RESET);
++}
+diff --git a/drivers/staging/rtl8852bu/platform/riscv_star64.mk b/drivers/staging/rtl8852bu/platform/riscv_star64.mk
+new file mode 100644
+index 000000000000..3c316c0e4731
+--- /dev/null
++++ b/drivers/staging/rtl8852bu/platform/riscv_star64.mk
+@@ -0,0 +1,8 @@
++ifeq ($(CONFIG_PLATFORM_RISCV_STAR64), y)
++EXTRA_CFLAGS += -DCONFIG_LITTLE_ENDIAN
++EXTRA_CFLAGS += -DCONFIG_IOCTL_CFG80211 -DRTW_USE_CFG80211_STA_EVENT
++EXTRA_CFLAGS += -DCONFIG_RADIO_WORK
++EXTRA_CFLAGS += -DGPIO_WIFI_RESET=47
++EXTRA_CFLAGS += -DCONFIG_PLATFORM_OPS
++_PLATFORM_FILES += platform/platform_riscv_star64.o
++endif
